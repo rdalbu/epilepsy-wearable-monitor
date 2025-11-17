@@ -1,0 +1,64 @@
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Logs e temporários
+*.log
+*.tmp
+*.swp
+*.swo
+
+# Configs de IDE/Editor
+.vscode/
+.idea/
+*.code-workspace
+
+# =========================
+# Backend (Python)
+# =========================
+backend/**/__pycache__/
+backend/**/*.py[cod]
+
+backend/.venv/
+backend/venv/
+backend/env/
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/.coverage
+backend/htmlcov/
+
+# Banco local (não versionar)
+backend/epilepsia.db
+
+# =========================
+# Frontend (Node/Vite/React)
+# =========================
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+
+# Logs do frontend
+frontend/**/*.log
+
+# Arquivos de ambiente do frontend
+frontend/.env
+frontend/.env.*
+frontend/.env.local
+frontend/.env.*.local
+
+# =========================
+# Firmware (ESP32 / Arduino)
+# =========================
+firmware/build/
+firmware/.pio/
+firmware/*.hex
+firmware/*.elf
+firmware/*.bin
+
+# =========================
+# Arquivos de ambiente gerais
+# =========================
+.env
+.env.*
+
