@@ -246,8 +246,8 @@ constexpr float G = 9.80665f;
 
 // Mais sensível para detectar crises tônico-clônicas com base em janelas
 // de 1 s, mas exigindo alguns segundos em sequência para considerar "crise".
-#define REQUIRED_WINDOWS_ON  5   // ≈ 3 s seguidos padrão crise para ativar
-#define REQUIRED_WINDOWS_OFF 4   // ≈ 2 s limpos para encerrar crise
+#define REQUIRED_WINDOWS_ON  3   // ≈ 3 s seguidos padrão crise para ativar
+#define REQUIRED_WINDOWS_OFF 2   // ≈ 2 s limpos para encerrar crise
 
 // Limiares de amplitude baseados nos padrões de repouso que você mediu
 // (repouso ~0,007 g / ~3 dps) e em descrições de crises com amplitude bem

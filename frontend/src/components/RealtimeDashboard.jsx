@@ -15,6 +15,9 @@ export const RealtimeDashboard = () => {
   const [useHrCheck, setUseHrCheck] = useState(true);
   const [bpmHistory, setBpmHistory] = useState([]); // últimos ~25 minutos
   const [crisisEvents, setCrisisEvents] = useState([]); // últimos eventos de crise
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [volume, setVolume] = useState(1);
+  const [notifications, setNotifications] = useState([]);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:8000/ws/dashboard");
@@ -62,7 +65,7 @@ export const RealtimeDashboard = () => {
                 startTime != null
                   ? Math.max(
                       1,
-                      Math.round((endTime.getTime() - startTime.getTime()) / 1000)
+                      Math.round((endTime.getTime() - startTime.getTime()) / 1000),
                     )
                   : null;
               events[idx] = { ...events[idx], endTime, durationSec };
@@ -105,10 +108,21 @@ export const RealtimeDashboard = () => {
   useEffect(() => {
     if (effectiveStatus !== "CRISE_CONFIRMADA") return;
 
-    const audio = new Audio("/sounds/alert.mp3");
-    audio.play().catch(() => {});
-    alert("Crise confirmada! Verifique o paciente imediatamente.");
-  }, [effectiveStatus]);
+    if (soundEnabled) {
+      const audio = new Audio("/sounds/alert.mp3");
+      audio.volume = volume;
+      audio.play().catch(() => {});
+    }
+
+    setNotifications((prev) => [
+      {
+        id: Date.now(),
+        message: "Crise confirmada! Verifique o paciente imediatamente.",
+        time: new Date(),
+      },
+      ...prev,
+    ]);
+  }, [effectiveStatus, soundEnabled, volume]);
 
   const bgColor = STATUS_COLORS[effectiveStatus] || "#6b7280";
 
@@ -126,16 +140,16 @@ export const RealtimeDashboard = () => {
 
     const minX = Math.min(...xs);
     const maxX = Math.max(...xs);
-    const minY = Math.min(...ys, 40);
-    const maxY = Math.max(...ys, 160);
+
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
 
     const spanX = maxX - minX || 1;
     const spanY = maxY - minY || 1;
 
     const points = bpmHistory
       .map((p) => {
-        const x =
-          margin + ((p.t - minX) / spanX) * (width - margin * 2);
+        const x = margin + ((p.t - minX) / spanX) * (width - margin * 2);
         const y =
           height - margin - ((p.bpm - minY) / spanY) * (height - margin * 2);
         return `${x},${y}`;
@@ -197,26 +211,77 @@ export const RealtimeDashboard = () => {
           {useHrCheck ? "Crise = movimento + batimento" : "Crise = só movimento"}
         </span>
       </div>
-      <button
-        type="button"
-        onClick={() => setUseHrCheck((prev) => !prev)}
+
+      <div
         style={{
           marginTop: "8px",
-          marginBottom: "8px",
-          padding: "6px 12px",
-          borderRadius: "999px",
-          border: "none",
-          cursor: "pointer",
-          backgroundColor: useHrCheck ? "#22c55e" : "#4b5563",
-          color: "#f9fafb",
-          fontSize: "12px",
-          fontWeight: 600,
+          marginBottom: "4px",
+          display: "flex",
+          flexWrap: "wrap",
+          gap: "8px",
+          alignItems: "center",
+          justifyContent: "space-between",
         }}
       >
-        {useHrCheck
-          ? "Usando verificação de batimentos na crise"
-          : "Somente movimento (sem verificação de batimentos)"}
-      </button>
+        <button
+          type="button"
+          onClick={() => setUseHrCheck((prev) => !prev)}
+          style={{
+            padding: "6px 12px",
+            borderRadius: "999px",
+            border: "none",
+            cursor: "pointer",
+            backgroundColor: useHrCheck ? "#22c55e" : "#4b5563",
+            color: "#f9fafb",
+            fontSize: "12px",
+            fontWeight: 600,
+          }}
+        >
+          {useHrCheck
+            ? "Usando verificação de batimentos na crise"
+            : "Somente movimento (sem verificação de batimentos)"}
+        </button>
+
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "8px",
+            fontSize: "11px",
+          }}
+        >
+          <button
+            type="button"
+            onClick={() => setSoundEnabled((prev) => !prev)}
+            style={{
+              padding: "4px 10px",
+              borderRadius: "999px",
+              border: "none",
+              cursor: "pointer",
+              backgroundColor: soundEnabled ? "#22c55e" : "#4b5563",
+              color: "#f9fafb",
+              fontWeight: 600,
+              fontSize: "11px",
+              whiteSpace: "nowrap",
+            }}
+          >
+            {soundEnabled ? "Som de alerta: ligado" : "Som de alerta: desligado"}
+          </button>
+          <div style={{ display: "flex", alignItems: "center", gap: "4px" }}>
+            <span>Volume</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value={volume}
+              onChange={(e) => setVolume(Number(e.target.value))}
+              style={{ cursor: "pointer" }}
+            />
+          </div>
+        </div>
+      </div>
+
       <p style={{ marginTop: 0, marginBottom: "8px" }}>
         {now.toLocaleDateString("pt-BR")} -{" "}
         {now.toLocaleTimeString("pt-BR", { hour12: false })}
@@ -287,6 +352,68 @@ export const RealtimeDashboard = () => {
           </ul>
         )}
       </div>
+
+      {notifications.length > 0 && (
+        <div
+          style={{
+            marginTop: "16px",
+            padding: "10px 12px",
+            borderRadius: "10px",
+            backgroundColor: "rgba(15,23,42,0.9)",
+            color: "#fef2f2",
+          }}
+        >
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "6px",
+            }}
+          >
+            <strong style={{ fontSize: "13px" }}>Alertas recentes</strong>
+            <button
+              type="button"
+              onClick={() => setNotifications([])}
+              style={{
+                border: "none",
+                background: "transparent",
+                color: "#f97316",
+                cursor: "pointer",
+                fontSize: "11px",
+                textDecoration: "underline",
+              }}
+            >
+              Limpar
+            </button>
+          </div>
+          <ul
+            style={{
+              listStyle: "none",
+              padding: 0,
+              margin: 0,
+              fontSize: "12px",
+              maxHeight: "120px",
+              overflowY: "auto",
+            }}
+          >
+            {notifications.map((n) => (
+              <li
+                key={n.id}
+                style={{
+                  padding: "4px 0",
+                  borderTop: "1px solid rgba(248,250,252,0.08)",
+                }}
+              >
+                <span style={{ display: "block" }}>{n.message}</span>
+                <span style={{ opacity: 0.7 }}>
+                  {n.time.toLocaleTimeString("pt-BR", { hour12: false })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 };
