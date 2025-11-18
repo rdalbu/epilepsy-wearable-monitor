@@ -1,10 +1,11 @@
-from typing import List
+from typing import Dict, List
 
 from datetime import datetime
 
 from fastapi import FastAPI, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.db.session import Base, engine, get_db
@@ -31,6 +32,14 @@ app.add_middleware(
 )
 
 active_dashboards: List[WebSocket] = []
+
+
+class DeviceConfig(BaseModel):
+    device_id: str
+    use_hr_check: bool
+
+
+device_configs: Dict[str, bool] = {}
 
 
 @app.post("/api/telemetry")
@@ -89,6 +98,18 @@ def list_crises(device_id: str, db: Session = Depends(get_db)):
     return crises
 
 
+@app.post("/api/device-config", response_model=DeviceConfig)
+def set_device_config(config: DeviceConfig) -> DeviceConfig:
+    device_configs[config.device_id] = config.use_hr_check
+    return config
+
+
+@app.get("/api/device-config", response_model=DeviceConfig)
+def get_device_config(device_id: str) -> DeviceConfig:
+    use_hr = device_configs.get(device_id, True)
+    return DeviceConfig(device_id=device_id, use_hr_check=use_hr)
+
+
 @app.websocket("/ws/dashboard")
 async def dashboard_ws(websocket: WebSocket):
     await websocket.accept()
@@ -105,4 +126,3 @@ async def dashboard_ws(websocket: WebSocket):
 @app.get("/health")
 def health_check():
     return {"status": "ok", "time": datetime.utcnow().isoformat()}
-

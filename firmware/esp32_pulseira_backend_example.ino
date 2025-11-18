@@ -32,6 +32,7 @@ unsigned long pulseEmaStartMs = 0;
 
 // Detecção de pico
 bool Pulse = false;
+bool useHeartRateCheck = true; // Controlado via comando SET_USE_HR
 int  IBI   = 600;
 unsigned long lastBeatMs = 0;
 int thresh = 512;
@@ -195,6 +196,7 @@ void updatePulse() {
 // ===========================================================================
 
 bool hrConsistenteComCrise() {
+  if (!useHeartRateCheck) return true;
   if (!baselineReady) return false;
   if (currentBPM < 40.0f || currentBPM > 200.0f) return false;
 
@@ -241,19 +243,19 @@ constexpr float G = 9.80665f;
 // crises tônico-clônicas fica ali por volta de 4–8 Hz, enquanto movimentos
 // normais ficam < ~0.8–1 Hz. Aqui usamos uma faixa 3–8 Hz para tolerar
 // um pouco de variação, mas focar em tremor convulsivo real.
-#define FREQ_MIN_HZ        3.0f
-#define FREQ_MAX_HZ        8.0f
+#define FREQ_MIN_HZ        2.0f
+#define FREQ_MAX_HZ        10.0f
 
 // Mais sensível para detectar crises tônico-clônicas com base em janelas
 // de 1 s, mas exigindo alguns segundos em sequência para considerar "crise".
-#define REQUIRED_WINDOWS_ON  3   // ≈ 3 s seguidos padrão crise para ativar
+#define REQUIRED_WINDOWS_ON  2   // ≈ 3 s seguidos padrão crise para ativar
 #define REQUIRED_WINDOWS_OFF 2   // ≈ 2 s limpos para encerrar crise
 
 // Limiares de amplitude baseados nos padrões de repouso que você mediu
 // (repouso ~0,007 g / ~3 dps) e em descrições de crises com amplitude bem
 // maior. 0.35 g RMS e 50 dps RMS filtram muito movimento leve/ambulatorial.
-#define ACC_RMS_MIN_G      0.35f
-#define GYR_RMS_MIN_DPS    50.0f
+#define ACC_RMS_MIN_G      0.30f
+#define GYR_RMS_MIN_DPS    40.0f
 
 #define HP_A            0.97f
 #define DIR_MIN_G_HP    0.12f
@@ -415,8 +417,27 @@ void setup() {
 // ===========================================================================
 // ============================== LOOP =======================================
 // ===========================================================================
-
 void loop() {
+  // 0) Verifica se chegou algum comando pela Serial (do bridge)
+  while (Serial.available() > 0) {
+    String cmdLine = Serial.readStringUntil('\n');
+    cmdLine.trim();
+    if (cmdLine.length() == 0) {
+      continue;
+    }
+
+    // Comando esperado: {"cmd":"SET_USE_HR","value":true/false}
+    if (cmdLine.indexOf("SET_USE_HR") >= 0) {
+      bool value = true;
+      if (cmdLine.indexOf("false") >= 0 || cmdLine.indexOf("0") >= 0) {
+        value = false;
+      }
+      useHeartRateCheck = value;
+      Serial.print("[CONFIG] useHeartRateCheck = ");
+      Serial.println(useHeartRateCheck ? "true" : "false");
+    }
+  }
+
   // 1) Atualiza batimento (HW-827)
   updatePulse();
 

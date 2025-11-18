@@ -95,7 +95,7 @@ export const App = () => {
       </header>
 
       {view === "realtime" ? (
-        <RealtimeDashboard />
+        <RealtimeDashboard deviceId={deviceId} />
       ) : (
         <HistoryPage deviceId={deviceId} />
       )}

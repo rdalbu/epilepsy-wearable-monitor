@@ -6,7 +6,7 @@ const STATUS_COLORS = {
   CRISE_CONFIRMADA: "#dc2626",
 };
 
-export const RealtimeDashboard = () => {
+export const RealtimeDashboard = ({ deviceId = "bracelet-01" }) => {
   const [bpm, setBpm] = useState(null);
   const [baseline, setBaseline] = useState(null);
   const [status, setStatus] = useState("NORMAL"); // status vindo do backend
@@ -103,6 +103,33 @@ export const RealtimeDashboard = () => {
 
   const effectiveStatus =
     !useHrCheck && status === "MOVIMENTO_SUSPEITO" ? "CRISE_CONFIRMADA" : status;
+
+  // Envia configuração de uso de batimentos para o backend sempre que mudar
+  useEffect(() => {
+    const controller = new AbortController();
+
+    const sendConfig = async () => {
+      try {
+        await fetch("http://localhost:8000/api/device-config", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            device_id: deviceId || "bracelet-01",
+            use_hr_check: useHrCheck,
+          }),
+          signal: controller.signal,
+        });
+      } catch {
+        // Silencia erro no dashboard; backend pode estar offline
+      }
+    };
+
+    sendConfig();
+
+    return () => controller.abort();
+  }, [deviceId, useHrCheck]);
 
   // Dispara alerta sempre que o status efetivo entra em CRISE_CONFIRMADA
   useEffect(() => {
@@ -417,4 +444,3 @@ export const RealtimeDashboard = () => {
     </div>
   );
 };
-
