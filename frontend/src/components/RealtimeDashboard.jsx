@@ -12,6 +12,7 @@ export const RealtimeDashboard = () => {
   const [status, setStatus] = useState("NORMAL");
   const [lastUpdate, setLastUpdate] = useState("");
   const [now, setNow] = useState(new Date());
+  const [useHrCheck, setUseHrCheck] = useState(true);
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:8000/ws/dashboard");
@@ -23,7 +24,12 @@ export const RealtimeDashboard = () => {
       setStatus(data.status);
       setLastUpdate(new Date(data.timestamp).toLocaleTimeString());
 
-      if (data.status === "CRISE_CONFIRMADA") {
+      const effectiveStatus =
+        !useHrCheck && data.status === "MOVIMENTO_SUSPEITO"
+          ? "CRISE_CONFIRMADA"
+          : data.status;
+
+      if (effectiveStatus === "CRISE_CONFIRMADA") {
         const audio = new Audio("/sounds/alert.mp3");
         audio.play().catch(() => {});
         alert("Crise confirmada! Verifique o paciente imediatamente.");
@@ -46,7 +52,10 @@ export const RealtimeDashboard = () => {
     return () => clearInterval(id);
   }, []);
 
-  const bgColor = STATUS_COLORS[status] || "#6b7280";
+  const effectiveStatus =
+    !useHrCheck && status === "MOVIMENTO_SUSPEITO" ? "CRISE_CONFIRMADA" : status;
+
+  const bgColor = STATUS_COLORS[effectiveStatus] || "#6b7280";
 
   return (
     <div
@@ -61,12 +70,31 @@ export const RealtimeDashboard = () => {
       }}
     >
       <h2 style={{ marginTop: 0 }}>Monitor em Tempo Real</h2>
+      <button
+        type="button"
+        onClick={() => setUseHrCheck((prev) => !prev)}
+        style={{
+          marginBottom: "8px",
+          padding: "6px 12px",
+          borderRadius: "999px",
+          border: "none",
+          cursor: "pointer",
+          backgroundColor: useHrCheck ? "#22c55e" : "#4b5563",
+          color: "#f9fafb",
+          fontSize: "12px",
+          fontWeight: 600,
+        }}
+      >
+        {useHrCheck
+          ? "Usando verificação de batimentos na crise"
+          : "Somente movimento (sem verificação de batimentos)"}
+      </button>
       <p style={{ marginTop: 0, marginBottom: "8px" }}>
         {now.toLocaleDateString("pt-BR")} -{" "}
         {now.toLocaleTimeString("pt-BR", { hour12: false })}
       </p>
       <p>
-        <strong>Status da crise:</strong> {status}
+        <strong>Status da crise:</strong> {effectiveStatus}
       </p>
       <p>
         <strong>BPM atual:</strong> {bpm ?? "--"}
@@ -80,4 +108,3 @@ export const RealtimeDashboard = () => {
     </div>
   );
 };
-
