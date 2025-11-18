@@ -6,10 +6,10 @@
 #include <math.h>
 
 // ===========================================================================
-// ====================== CONFIG IDENTIFICAÇÃO ===============================
+// ====================== IDENTIFICAÇÃO / DEVICE ID ==========================
 // ===========================================================================
 
-// ID lógico da pulseira (vai aparecer no dashboard / histórico)
+// ID lógico da pulseira (aparece no backend / dashboard)
 const char *DEVICE_ID = "bracelet-01";
 
 // ===========================================================================
@@ -19,7 +19,7 @@ const char *DEVICE_ID = "bracelet-01";
 bool crise_ativa      = false; // Detectada pelo MPU (movimento tipo crise)
 bool crise_confirmada = false; // Movimento + batimento compatível
 
-// ==================== PULSE (HW-827) =================
+// ==================== PULSE (HW-827) =======================================
 
 constexpr int PULSE_PIN = 34; // Sensor de batimento no GPIO34 (ADC1)
 
@@ -40,14 +40,14 @@ int trough = 512;
 int amp    = 100;
 
 // Limites de intervalo entre batimentos (IBI)
-const int MIN_IBI_MS = 500;   // 500 ms  → ~120 bpm máximo
-const int MAX_IBI_MS = 1500;  // 1500 ms → ~40 bpm mínimo
+const int MIN_IBI_MS = 500;   // 500 ms  -> ~120 bpm máximo
+const int MAX_IBI_MS = 1500;  // 1500 ms -> ~40 bpm mínimo
 
 // Armazena IBIs recentes
 std::vector<int> ibiList;
 const size_t MAX_IBI_SAMPLES = 20;
 
-float currentBPM    = 0.0f;  // BPM após filtro (valor que vamos usar/enviar)
+float currentBPM    = 0.0f;  // BPM após filtros (valor usado/enviado)
 float baselineBPM   = 0.0f;  // BPM médio em repouso
 bool  baselineReady = false;
 
@@ -56,7 +56,7 @@ float filteredBPM       = 0.0f;
 bool  filteredBPMReady  = false;
 int   bpmSpikeCount     = 0;      // quantos batimentos seguidos parecem "pico absurdo"
 const float BPM_MAX_JUMP = 30.0f; // variação máxima aceitável entre medidas
-const int   BPM_SPIKE_TOLERANCE = 3; // depois de N leituras "altas" seguidas, passa a aceitar
+const int   BPM_SPIKE_TOLERANCE = 3; // depois de N leituras "altas" seguidas, aceita
 
 // ===========================================================================
 // ================== Função que atualiza o batimento ========================
@@ -154,29 +154,27 @@ void updatePulse() {
             // Suspeita de pico (saltou demais de uma vez)
             bpmSpikeCount++;
             if (bpmSpikeCount >= BPM_SPIKE_TOLERANCE) {
-              // Se esse valor "alto" se repetiu várias vezes, aceitamos como nova realidade
+              // Se esse valor "alto" se repetiu várias vezes, aceitamos
               filteredBPM   = newBpm;
               bpmSpikeCount = 0;
             } else {
-              // Considera ruído: mantém filteredBPM e não puxa tanto para esse valor
-              // (não atualiza filteredBPM aqui)
+              // Considera ruído: mantém filteredBPM (não atualiza aqui)
             }
           } else {
-            // Diferença aceitável → suaviza com EMA
+            // Diferença aceitável -> suaviza com EMA
             bpmSpikeCount = 0;
             filteredBPM = filteredBPM * 0.7f + newBpm * 0.3f;
           }
         }
 
-        // currentBPM que será usado no resto do código + telemetria
+        // currentBPM usado no resto do código + telemetria
         currentBPM = filteredBPMReady ? filteredBPM : newBpm;
       }
 
       lastBeatMs = now;
       Pulse = true;
     } else {
-      // dt muito curto ou muito longo → provavelmente ruído
-      // Não atualiza lastBeatMs para manter referência no batimento "bom"
+      // dt muito curto ou muito longo -> ruído
       Pulse = true;
     }
   }
@@ -193,7 +191,7 @@ void updatePulse() {
 }
 
 // ===========================================================================
-// ============ Verifica se o BPM é compatível com crise =====================
+// ===== Verifica se o BPM é compatível com crise ============================
 // ===========================================================================
 
 bool hrConsistenteComCrise() {
@@ -212,12 +210,8 @@ bool hrConsistenteComCrise() {
 }
 
 // ===========================================================================
-// ====================== MPU6050 + LEDs =====================================
+// ====================== MPU6050 (SEM LEDS) =================================
 // ===========================================================================
-
-const int LED_VERMELHO = 4;
-const int LED_AZUL     = 5;
-const int LED_VERDE    = 18;
 
 constexpr int SDA_PIN = 21;
 constexpr int SCL_PIN = 22;
@@ -321,28 +315,6 @@ bool windowLooksLikeSeizure_ACC_GYR(float &acc_rms_g, float &freq_hz, float &gyr
   return (acc_ok && freq_ok && gyr_ok);
 }
 
-void setLEDs(bool red, bool green, bool blue) {
-  digitalWrite(LED_VERMELHO, red   ? HIGH : LOW);
-  digitalWrite(LED_VERDE,    green ? HIGH : LOW);
-  digitalWrite(LED_AZUL,     blue  ? HIGH : LOW);
-}
-
-// Decide cor com base nos estados e direção
-void updateLEDState(bool x_domina, bool y_domina) {
-  if (crise_confirmada) {
-    // Crise confirmada: Vermelho
-    setLEDs(true, false, false);
-  } else if (crise_ativa) {
-    // Só movimento tipo crise, sem batimento compatível: Amarelo (vermelho+verde)
-    setLEDs(true, true, false);
-  } else {
-    // Sem crise: direção do movimento
-    if (x_domina)       setLEDs(false, true,  false); // Verde
-    else if (y_domina)  setLEDs(false, false, true);  // Azul
-    else                setLEDs(false, false, false); // Apagado
-  }
-}
-
 // ===========================================================================
 // =================== TELEMETRIA VIA SERIAL (COM4) ==========================
 // ===========================================================================
@@ -366,8 +338,7 @@ void enviaTelemetriaSerial(float bpm,
   payload += "\"status\":\"" + status + "\"";
   payload += "}";
 
-  // Linha específica para a dashboard ler
-  // Fica fácil no backend filtrar linhas que começam com { e fazer parse do JSON
+  // Linha específica para o bridge ler e mandar ao backend
   Serial.println(payload);
 }
 
@@ -379,16 +350,9 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  // Desliga Bluetooth para economizar
-  esp_bt_controller_disable();
-  // Se quiser também pode desligar o Wi-Fi de vez:
+  // Desliga Wi-Fi e Bluetooth para reduzir ruído no ADC
   esp_wifi_stop();
-
-  // LEDs desativados (não utilizados)
-  // pinMode(LED_VERMELHO, OUTPUT);
-  // pinMode(LED_AZUL,     OUTPUT);
-  // pinMode(LED_VERDE,    OUTPUT);
-  // setLEDs(false, false, false);
+  esp_bt_controller_disable();
 
   // Pulse sensor
   analogReadResolution(12);
@@ -405,11 +369,8 @@ void setup() {
   readBytes(REG_WHO_AM_I, &who, 1);
   if (who != 0x68 && who != 0x70) {
     Serial.println("ERRO: MPU-6050 não encontrado!");
-    while (1) {
-      setLEDs(true, true, true);
-      delay(1000);
-      setLEDs(false, false, false);
-      delay(1000);
+    while (true) {
+      delay(1000); // trava aqui, sem usar LEDs
     }
   }
 
@@ -459,7 +420,7 @@ void loop() {
   float ax_ms2 = ax_g * G;
   float ay_ms2 = ay_g * G;
   float az_ms2 = az_g * G;
- 
+
   float smv = sqrtf(ax_ms2*ax_ms2 + ay_ms2*ay_ms2 + az_ms2*az_ms2) - G;
 
   float gx_dps = (gx_raw / GYR_LSB_PER_DPS);
@@ -471,7 +432,7 @@ void loop() {
   gyrmag_buf[widx]  = gyr_mag_dps;
   widx = (widx + 1) % WINDOW_SAMPLES;
 
-  // Passa-alta para direção
+  // Passa-alta para direção (sem LEDs)
   float ax_hp = HP_A * (ax_hp_g + (ax_g - ax_prev_g));
   float ay_hp = HP_A * (ay_hp_g + (ay_g - ay_prev_g));
   ax_prev_g = ax_g;
@@ -557,22 +518,13 @@ void loop() {
     }
   }
 
-  // 4) LEDs – direção + estado de crise
+  // 4) Direção apenas para debug opcional (sem LEDs)
   float absx = fabs(ax_hp_g);
   float absy = fabs(ay_hp_g);
   bool x_domina = (absx > absy) && (absx >= DIR_MIN_G_HP);
   bool y_domina = (absy > absx) && (absy >= DIR_MIN_G_HP);
-
-  // LEDs físicos não são atualizados
-  // updateLEDState(x_domina, y_domina);
-
-  // 5) Envio de telemetria a cada 1 segundo (via Serial / COM4)
-  static unsigned long lastSendMs = 0;
-  unsigned long nowMs = millis();
-  if (nowMs - lastSendMs >= 1000) { // 1s
-    lastSendMs = nowMs;
-    enviaTelemetriaSerial(currentBPM, baselineBPM, crise_ativa, crise_confirmada);
-  }
+  (void)x_domina;
+  (void)y_domina;
 
   // Debug opcional de direção
   if (DEBUG_DIR) {
@@ -587,5 +539,14 @@ void loop() {
     }
   }
 
+  // 5) Envio de telemetria a cada 1 segundo (via Serial / COM4)
+  static unsigned long lastSendMs = 0;
+  unsigned long nowMs = millis();
+  if (nowMs - lastSendMs >= 1000) { // 1s
+    lastSendMs = nowMs;
+    enviaTelemetriaSerial(currentBPM, baselineBPM, crise_ativa, crise_confirmada);
+  }
+
   delay(10);
 }
+

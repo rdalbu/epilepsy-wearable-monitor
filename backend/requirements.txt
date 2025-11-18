@@ -3,4 +3,5 @@ uvicorn[standard]==0.30.6
 sqlalchemy==2.0.36
 psycopg2-binary==2.9.10
 pydantic==1.10.18
-
+pyserial==3.5
+requests==2.32.3
