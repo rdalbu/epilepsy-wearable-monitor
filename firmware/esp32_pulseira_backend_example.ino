@@ -232,13 +232,17 @@ constexpr float G = 9.80665f;
 #define FS_HZ              100
 #define WINDOW_SECONDS     1.0f
 #define WINDOW_SAMPLES     (int)(FS_HZ*WINDOW_SECONDS)
-#define REQUIRED_WINDOWS_ON  2
-#define REQUIRED_WINDOWS_OFF 2
+// Mais sensível para detectar crises tônico-clônicas com base em estudos
+// de wearables: basta 1 janela "ruim" para ligar e 1 "boa" para desligar.
+#define REQUIRED_WINDOWS_ON  1
+#define REQUIRED_WINDOWS_OFF 1
 
-#define ACC_RMS_MIN_G      1.5f
-#define GYR_RMS_MIN_DPS    200.0f
-#define FREQ_MIN_HZ        2.0f
-#define FREQ_MAX_HZ        8.0f
+// Limiares mais sensíveis inspirados em faixas de movimento de crises:
+// ~0.8 g RMS e ~80 dps RMS em 1–10 Hz.
+#define ACC_RMS_MIN_G      0.8f
+#define GYR_RMS_MIN_DPS    80.0f
+#define FREQ_MIN_HZ        1.0f
+#define FREQ_MAX_HZ        10.0f
 
 #define HP_A            0.97f
 #define DIR_MIN_G_HP    0.12f
@@ -549,4 +553,3 @@ void loop() {
 
   delay(10);
 }
-

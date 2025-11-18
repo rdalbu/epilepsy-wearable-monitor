@@ -9,30 +9,76 @@ const STATUS_COLORS = {
 export const RealtimeDashboard = () => {
   const [bpm, setBpm] = useState(null);
   const [baseline, setBaseline] = useState(null);
-  const [status, setStatus] = useState("NORMAL");
+  const [status, setStatus] = useState("NORMAL"); // status vindo do backend
   const [lastUpdate, setLastUpdate] = useState("");
   const [now, setNow] = useState(new Date());
   const [useHrCheck, setUseHrCheck] = useState(true);
+  const [bpmHistory, setBpmHistory] = useState([]); // últimos ~25 minutos
+  const [crisisEvents, setCrisisEvents] = useState([]); // últimos eventos de crise
 
   useEffect(() => {
     const ws = new WebSocket("ws://localhost:8000/ws/dashboard");
 
     ws.onmessage = (event) => {
       const data = JSON.parse(event.data);
+
+      // Atualiza estado bruto vindo do backend
       setBpm(data.bpm);
       setBaseline(data.baseline_bpm ?? null);
       setStatus(data.status);
       setLastUpdate(new Date(data.timestamp).toLocaleTimeString());
 
-      const effectiveStatus =
-        !useHrCheck && data.status === "MOVIMENTO_SUSPEITO"
-          ? "CRISE_CONFIRMADA"
-          : data.status;
+      // Atualiza histórico de BPM (últimos 25 minutos)
+      const ts = new Date(data.timestamp).getTime();
+      if (!Number.isNaN(ts) && typeof data.bpm === "number") {
+        setBpmHistory((prev) => {
+          const cutoff = ts - 25 * 60 * 1000; // 25 min
+          const filtered = prev.filter((p) => p.t >= cutoff);
+          filtered.push({ t: ts, bpm: data.bpm });
+          return filtered;
+        });
+      }
 
-      if (effectiveStatus === "CRISE_CONFIRMADA") {
-        const audio = new Audio("/sounds/alert.mp3");
-        audio.play().catch(() => {});
-        alert("Crise confirmada! Verifique o paciente imediatamente.");
+      // Atualiza painel de eventos de crise
+      if (data.crisis_event) {
+        setCrisisEvents((prev) => {
+          const events = [...prev];
+          const ce = data.crisis_event;
+          const time = new Date(data.timestamp);
+
+          if (ce.type === "CRISIS_STARTED") {
+            events.unshift({
+              id: ce.crisis_id,
+              startTime: time,
+              endTime: null,
+              durationSec: null,
+            });
+          } else if (ce.type === "CRISIS_ENDED") {
+            const idx = events.findIndex((e) => e.id === ce.crisis_id);
+            if (idx !== -1) {
+              const startTime = events[idx].startTime;
+              const endTime = time;
+              const durationSec =
+                startTime != null
+                  ? Math.max(
+                      1,
+                      Math.round((endTime.getTime() - startTime.getTime()) / 1000)
+                    )
+                  : null;
+              events[idx] = { ...events[idx], endTime, durationSec };
+            } else {
+              events.unshift({
+                id: ce.crisis_id,
+                startTime: null,
+                endTime: time,
+                durationSec: null,
+              });
+            }
+          }
+
+          // Mantém só os últimos 5 eventos
+          return events.slice(0, 5);
+        });
       }
     };
 
@@ -55,7 +101,66 @@ export const RealtimeDashboard = () => {
   const effectiveStatus =
     !useHrCheck && status === "MOVIMENTO_SUSPEITO" ? "CRISE_CONFIRMADA" : status;
 
+  // Dispara alerta sempre que o status efetivo entra em CRISE_CONFIRMADA
+  useEffect(() => {
+    if (effectiveStatus !== "CRISE_CONFIRMADA") return;
+
+    const audio = new Audio("/sounds/alert.mp3");
+    audio.play().catch(() => {});
+    alert("Crise confirmada! Verifique o paciente imediatamente.");
+  }, [effectiveStatus]);
+
   const bgColor = STATUS_COLORS[effectiveStatus] || "#6b7280";
+
+  const renderBpmChart = () => {
+    if (!bpmHistory.length) {
+      return <p style={{ marginTop: "8px" }}>Sem dados suficientes ainda.</p>;
+    }
+
+    const width = 440;
+    const height = 120;
+    const margin = 10;
+
+    const xs = bpmHistory.map((p) => p.t);
+    const ys = bpmHistory.map((p) => p.bpm);
+
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys, 40);
+    const maxY = Math.max(...ys, 160);
+
+    const spanX = maxX - minX || 1;
+    const spanY = maxY - minY || 1;
+
+    const points = bpmHistory
+      .map((p) => {
+        const x =
+          margin + ((p.t - minX) / spanX) * (width - margin * 2);
+        const y =
+          height - margin - ((p.bpm - minY) / spanY) * (height - margin * 2);
+        return `${x},${y}`;
+      })
+      .join(" ");
+
+    return (
+      <svg
+        width={width}
+        height={height}
+        style={{
+          backgroundColor: "rgba(0,0,0,0.25)",
+          borderRadius: "8px",
+          marginTop: "8px",
+        }}
+      >
+        <polyline
+          fill="none"
+          stroke="#60a5fa"
+          strokeWidth="2"
+          points={points}
+        />
+      </svg>
+    );
+  };
 
   return (
     <div
@@ -69,11 +174,34 @@ export const RealtimeDashboard = () => {
         boxShadow: "0 10px 25px rgba(0,0,0,0.3)",
       }}
     >
-      <h2 style={{ marginTop: 0 }}>Monitor em Tempo Real</h2>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: "8px",
+        }}
+      >
+        <h2 style={{ marginTop: 0, marginBottom: 0 }}>Monitor em Tempo Real</h2>
+        <span
+          style={{
+            padding: "4px 10px",
+            borderRadius: "999px",
+            fontSize: "11px",
+            fontWeight: 600,
+            backgroundColor: useHrCheck ? "#22c55e" : "#f97316",
+            color: "#020617",
+            whiteSpace: "nowrap",
+          }}
+        >
+          {useHrCheck ? "Crise = movimento + batimento" : "Crise = só movimento"}
+        </span>
+      </div>
       <button
         type="button"
         onClick={() => setUseHrCheck((prev) => !prev)}
         style={{
+          marginTop: "8px",
           marginBottom: "8px",
           padding: "6px 12px",
           borderRadius: "999px",
@@ -105,6 +233,61 @@ export const RealtimeDashboard = () => {
       <p>
         <small>Última atualização: {lastUpdate || "--"}</small>
       </p>
+
+      <div style={{ marginTop: "12px" }}>
+        <h3 style={{ margin: 0, fontSize: "14px" }}>
+          BPM (últimos ~25 minutos)
+        </h3>
+        {renderBpmChart()}
+      </div>
+
+      <div style={{ marginTop: "16px" }}>
+        <h3 style={{ margin: 0, fontSize: "14px" }}>Últimos eventos de crise</h3>
+        {crisisEvents.length === 0 ? (
+          <p style={{ marginTop: "4px", fontSize: "13px" }}>
+            Nenhum evento de crise registrado ainda.
+          </p>
+        ) : (
+          <ul
+            style={{
+              marginTop: "4px",
+              paddingLeft: "18px",
+              fontSize: "13px",
+            }}
+          >
+            {crisisEvents.map((ev) => (
+              <li key={ev.id}>
+                {ev.startTime && (
+                  <>
+                    Início:{" "}
+                    {ev.startTime.toLocaleTimeString("pt-BR", {
+                      hour12: false,
+                    })}
+                    {"; "}
+                  </>
+                )}
+                {ev.endTime ? (
+                  <>
+                    Fim:{" "}
+                    {ev.endTime.toLocaleTimeString("pt-BR", {
+                      hour12: false,
+                    })}
+                    {ev.durationSec != null && (
+                      <>
+                        ; duração: {Math.floor(ev.durationSec / 60)}m
+                        {ev.durationSec % 60}s
+                      </>
+                    )}
+                  </>
+                ) : (
+                  <span>Crise em andamento</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   );
 };
+
