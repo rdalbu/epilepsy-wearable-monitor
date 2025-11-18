@@ -1,24 +1,13 @@
 #include <Arduino.h>
 #include "esp_wifi.h"
 #include "esp_bt.h"
-#include <WiFi.h>
-#include <HTTPClient.h>
 #include <Wire.h>
 #include <vector>
 #include <math.h>
 
 // ===========================================================================
-// ====================== CONFIG Wi-Fi / BACKEND =============================
+// ====================== CONFIG IDENTIFICAÇÃO ===============================
 // ===========================================================================
-
-// Nome e senha da sua rede Wi-Fi
-const char *WIFI_SSID     = "SUA_REDE_WIFI";
-const char *WIFI_PASSWORD = "SUA_SENHA_WIFI";
-
-// IP do PC onde o backend FastAPI está rodando (porta 8000)
-// Descubra o IP com "ipconfig" no Windows (ex.: 192.168.0.10)
-const char *BACKEND_HOST = "192.168.0.10";
-const int   BACKEND_PORT = 8000;
 
 // ID lógico da pulseira (vai aparecer no dashboard / histórico)
 const char *DEVICE_ID = "bracelet-01";
@@ -355,37 +344,13 @@ void updateLEDState(bool x_domina, bool y_domina) {
 }
 
 // ===========================================================================
-// =================== CONEXÃO Wi-Fi + TELEMETRIA ============================
+// =================== TELEMETRIA VIA SERIAL (COM4) ==========================
 // ===========================================================================
 
-void conectaWiFi() {
-  if (WiFi.status() == WL_CONNECTED) {
-    return;
-  }
-
-  WiFi.mode(WIFI_STA);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-
-  Serial.print("Conectando ao Wi-Fi");
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println();
-  Serial.print("Wi-Fi conectado. IP: ");
-  Serial.println(WiFi.localIP());
-}
-
-void enviaTelemetria(float bpm,
-                     float baselineBpm,
-                     bool criseMovimento,
-                     bool criseConfirmada) {
-  conectaWiFi();
-  if (WiFi.status() != WL_CONNECTED) {
-    Serial.println("[ERRO] Wi-Fi não conectado, não enviando telemetria.");
-    return;
-  }
-
+void enviaTelemetriaSerial(float bpm,
+                           float baselineBpm,
+                           bool criseMovimento,
+                           bool criseConfirmada) {
   // Mapeia os estados para o backend
   String status = "NORMAL";
   if (criseConfirmada) {
@@ -394,13 +359,6 @@ void enviaTelemetria(float bpm,
     status = "MOVIMENTO_SUSPEITO";
   }
 
-  HTTPClient http;
-  String url = String("http://") + BACKEND_HOST + ":" + String(BACKEND_PORT) +
-               "/api/telemetry";
-
-  http.begin(url);
-  http.addHeader("Content-Type", "application/json");
-
   String payload = "{";
   payload += "\"device_id\":\"" + String(DEVICE_ID) + "\",";
   payload += "\"bpm\":" + String((int)bpm) + ",";
@@ -408,21 +366,9 @@ void enviaTelemetria(float bpm,
   payload += "\"status\":\"" + status + "\"";
   payload += "}";
 
-  Serial.print("[ENVIO] POST ");
-  Serial.print(url);
-  Serial.print(" -> ");
+  // Linha específica para a dashboard ler
+  // Fica fácil no backend filtrar linhas que começam com { e fazer parse do JSON
   Serial.println(payload);
-
-  int httpCode = http.POST(payload);
-  if (httpCode > 0) {
-    Serial.print("[OK] Código HTTP: ");
-    Serial.println(httpCode);
-  } else {
-    Serial.print("[ERRO] HTTP POST falhou: ");
-    Serial.println(httpCode);
-  }
-
-  http.end();
 }
 
 // ===========================================================================
@@ -433,16 +379,16 @@ void setup() {
   Serial.begin(115200);
   delay(200);
 
-  // Se quiser, pode deixar o Bluetooth desligado se não for usar
+  // Desliga Bluetooth para economizar
   esp_bt_controller_disable();
-  // NÃO desligar o Wi-Fi aqui, pois vamos usar para enviar telemetria
-  // esp_wifi_stop();  // <- NÃO usar
+  // Se quiser também pode desligar o Wi-Fi de vez:
+  esp_wifi_stop();
 
-  // LEDs
-  pinMode(LED_VERMELHO, OUTPUT);
-  pinMode(LED_AZUL,     OUTPUT);
-  pinMode(LED_VERDE,    OUTPUT);
-  setLEDs(false, false, false);
+  // LEDs desativados (não utilizados)
+  // pinMode(LED_VERMELHO, OUTPUT);
+  // pinMode(LED_AZUL,     OUTPUT);
+  // pinMode(LED_VERDE,    OUTPUT);
+  // setLEDs(false, false, false);
 
   // Pulse sensor
   analogReadResolution(12);
@@ -481,7 +427,6 @@ void setup() {
   }
 
   Serial.println("Setup completo. Detecção de crise (movimento + BPM) iniciada.");
-  conectaWiFi(); // opcional: já tenta conectar no boot
 }
 
 // ===========================================================================
@@ -618,14 +563,15 @@ void loop() {
   bool x_domina = (absx > absy) && (absx >= DIR_MIN_G_HP);
   bool y_domina = (absy > absx) && (absy >= DIR_MIN_G_HP);
 
-  updateLEDState(x_domina, y_domina);
+  // LEDs físicos não são atualizados
+  // updateLEDState(x_domina, y_domina);
 
-  // 5) Envio de telemetria a cada 1 segundo
+  // 5) Envio de telemetria a cada 1 segundo (via Serial / COM4)
   static unsigned long lastSendMs = 0;
   unsigned long nowMs = millis();
   if (nowMs - lastSendMs >= 1000) { // 1s
     lastSendMs = nowMs;
-    enviaTelemetria(currentBPM, baselineBPM, crise_ativa, crise_confirmada);
+    enviaTelemetriaSerial(currentBPM, baselineBPM, crise_ativa, crise_confirmada);
   }
 
   // Debug opcional de direção
