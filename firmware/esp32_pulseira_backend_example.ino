@@ -229,20 +229,31 @@ constexpr float G = 9.80665f;
 #define ACC_LSB_PER_G   4096.0f  // FSR +/- 8g
 #define GYR_LSB_PER_DPS 65.5f    // FSR +/- 500dps
 
+// ---------------------------------------------------------------------------
+// JANELA E PADRÕES DE CRISE (CALIBRAÇÃO BASEADA EM LITERATURA)
+// ---------------------------------------------------------------------------
+
 #define FS_HZ              100
 #define WINDOW_SECONDS     1.0f
 #define WINDOW_SAMPLES     (int)(FS_HZ*WINDOW_SECONDS)
-// Mais sensível para detectar crises tônico-clônicas com base em estudos
-// de wearables: basta 1 janela "ruim" para ligar e 1 "boa" para desligar.
-#define REQUIRED_WINDOWS_ON  1
-#define REQUIRED_WINDOWS_OFF 1
 
-// Limiares mais sensíveis inspirados em faixas de movimento de crises:
-// ~0.8 g RMS e ~80 dps RMS em 1–10 Hz.
-#define ACC_RMS_MIN_G      0.8f
-#define GYR_RMS_MIN_DPS    80.0f
-#define FREQ_MIN_HZ        1.0f
-#define FREQ_MAX_HZ        10.0f
+// Estudos com pulseira no punho sugerem que a maior parte da energia de
+// crises tônico-clônicas fica ali por volta de 4–8 Hz, enquanto movimentos
+// normais ficam < ~0.8–1 Hz. Aqui usamos uma faixa 3–8 Hz para tolerar
+// um pouco de variação, mas focar em tremor convulsivo real.
+#define FREQ_MIN_HZ        3.0f
+#define FREQ_MAX_HZ        8.0f
+
+// Mais sensível para detectar crises tônico-clônicas com base em janelas
+// de 1 s, mas exigindo alguns segundos em sequência para considerar "crise".
+#define REQUIRED_WINDOWS_ON  5   // ≈ 3 s seguidos padrão crise para ativar
+#define REQUIRED_WINDOWS_OFF 4   // ≈ 2 s limpos para encerrar crise
+
+// Limiares de amplitude baseados nos padrões de repouso que você mediu
+// (repouso ~0,007 g / ~3 dps) e em descrições de crises com amplitude bem
+// maior. 0.35 g RMS e 50 dps RMS filtram muito movimento leve/ambulatorial.
+#define ACC_RMS_MIN_G      0.35f
+#define GYR_RMS_MIN_DPS    50.0f
 
 #define HP_A            0.97f
 #define DIR_MIN_G_HP    0.12f
@@ -308,14 +319,21 @@ bool windowLooksLikeSeizure_ACC_GYR(float &acc_rms_g, float &freq_hz, float &gyr
     gyr_local[i] = gyrmag_buf[i];
   }
 
+  // RMS do módulo de aceleração dinâmica em "g"
   acc_rms_g   = rms(smv_local, WINDOW_SAMPLES) / G;
+  // Frequência estimada (zero-cross) do tremor
   freq_hz     = estimateFreqByZeroCross(smv_local, WINDOW_SAMPLES, (float)FS_HZ);
+  // RMS da magnitude do giroscópio
   gyr_rms_dps = rms(gyr_local, WINDOW_SAMPLES);
 
   bool acc_ok  = (acc_rms_g   >= ACC_RMS_MIN_G);
   bool freq_ok = (freq_hz     >= FREQ_MIN_HZ && freq_hz <= FREQ_MAX_HZ);
   bool gyr_ok  = (gyr_rms_dps >= GYR_RMS_MIN_DPS);
 
+  // Só consideramos "janela com cara de crise" se:
+  // - amplitude de aceleração for alta
+  // - frequência estiver na banda típica de tremor convulsivo
+  // - giroscópio indicar rotação forte
   return (acc_ok && freq_ok && gyr_ok);
 }
 
@@ -461,14 +479,14 @@ void loop() {
       if (windows_ok > 0) windows_ok--;
     }
 
-    // Ativa crise de movimento
+    // Ativa crise de movimento se tiver N janelas seguidas com padrão de crise
     if (!crise_ativa && windows_ok >= REQUIRED_WINDOWS_ON) {
       crise_ativa = true;
       crise_confirmada = false;
       if (PRINT_CRISE_EVENTS) Serial.println("CRISE_MOVIMENTO_DETECTADA");
     }
 
-    // Encerra crise de movimento
+    // Encerra crise de movimento após janelas limpas
     if (crise_ativa && windows_clear >= REQUIRED_WINDOWS_OFF) {
       crise_ativa = false;
       crise_confirmada = false;
