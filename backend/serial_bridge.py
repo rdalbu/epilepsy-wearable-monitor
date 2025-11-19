@@ -22,15 +22,20 @@ def _send_payload(payload: Dict[str, Any], prefix: str = "") -> None:
     try:
         resp = requests.post(BACKEND_URL, json=payload, timeout=2)
         print(f"{prefix}Enviado:", payload, "HTTP:", resp.status_code)
-    except Exception as e:  
+    except Exception as e:  # noqa: BLE001
         print(f"{prefix}Erro ao enviar para backend:", e)
 
 
 def main() -> None:
     print(f"Abrindo porta serial {SERIAL_PORT} em {BAUD_RATE} baud...")
     ser = serial.Serial(SERIAL_PORT, BAUD_RATE, timeout=1)
-    # Pequeno delay para o ESP32 resetar e começar a mandar dados
+
+    # Dá tempo pro ESP32 resetar e começar a mandar dados
     time.sleep(2)
+
+    # Limpa qualquer lixo de boot que ainda esteja no buffer
+    ser.reset_input_buffer()
+    ser.reset_output_buffer()
 
     last_payload: Dict[str, Any] = {}
     last_config_value: Dict[str, Any] = {"device_id": "bracelet-01", "use_hr_check": False}
@@ -133,27 +138,52 @@ def main() -> None:
     while True:
         try:
             line_bytes = ser.readline()
-            if line_bytes:
+
+            # Nada lido nessa iteração
+            if not line_bytes:
+                poll_and_send_config()
+                continue
+
+            # 1) Ignora linhas só com zeros (lixo binário)
+            if all(b == 0x00 for b in line_bytes):
+                # opcional: descomentar se quiser ver quando isso ocorre
+                # print("Linha ignorada (apenas 0x00).")
+                poll_and_send_config()
+                continue
+
+            # 2) Decodifica em texto, ignorando caracteres estranhos
+            try:
                 line = line_bytes.decode("utf-8", errors="ignore").strip()
-                if not line:
-                    continue
+            except Exception:
+                line = line_bytes.decode("latin-1", errors="ignore").strip()
 
-                print("RAW:", repr(line))
+            if not line:
+                poll_and_send_config()
+                continue
 
-                # Extrai JSON mesmo se vier misturado com logs ([WIN], [CRISE], etc.)
-                if "{" in line and "}" in line:
-                    json_part = line[line.find("{") : line.rfind("}") + 1]
-                    try:
-                        payload = json.loads(json_part)
-                    except json.JSONDecodeError:
-                        print("JSON inválido, ignorando:", line)
-                    else:
-                        # Normaliza status para evitar problemas com Enum no backend
-                        if "status" in payload and isinstance(payload["status"], str):
-                            payload["status"] = payload["status"].strip().upper()
+            # 3) Ignora mensagens de boot do ESP32 (bootloader)
+            if line.startswith("ets ") or line.startswith("rst:") or "ets Jul 29 2019" in line:
+                print("Boot/Reset ESP32 (ignorado):", repr(line))
+                poll_and_send_config()
+                continue
 
-                        last_payload = payload
-                        _send_payload(payload)
+            # A partir daqui é dado como você veria no Serial Monitor do Arduino
+            print("RAW:", repr(line))
+
+            # 4) Extrai JSON mesmo se vier misturado com logs ([WIN], [CRISE], etc.)
+            if "{" in line and "}" in line:
+                json_part = line[line.find("{") : line.rfind("}") + 1]
+                try:
+                    payload = json.loads(json_part)
+                except json.JSONDecodeError:
+                    print("JSON inválido, ignorando:", line)
+                else:
+                    # Normaliza status para evitar problemas com Enum no backend
+                    if "status" in payload and isinstance(payload["status"], str):
+                        payload["status"] = payload["status"].strip().upper()
+
+                    last_payload = payload
+                    _send_payload(payload)
 
             # Sempre tenta sincronizar configuração periodicamente
             poll_and_send_config()

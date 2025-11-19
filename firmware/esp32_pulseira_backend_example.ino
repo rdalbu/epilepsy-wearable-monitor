@@ -1,6 +1,3 @@
-// Firmware ESP32 - Pulseira de detecção de crises
-// Versão ajustada: lógica de movimento + batimento
-
 #include <Arduino.h>
 #include "esp_wifi.h"
 #include "esp_bt.h"
@@ -35,9 +32,6 @@ unsigned long pulseEmaStartMs = 0;
 
 // Detecção de pico
 bool Pulse = false;
-// Começa com verificação de batimento desativada.
-// Pode ser alterado via comando SET_USE_HR vindo do backend.
-bool useHeartRateCheck = false;
 int  IBI   = 600;
 unsigned long lastBeatMs = 0;
 int thresh = 512;
@@ -46,15 +40,15 @@ int trough = 512;
 int amp    = 100;
 
 // Limites de intervalo entre batimentos (IBI)
-const int MIN_IBI_MS = 500;  // 500 ms  -> ~120 bpm máximo
-const int MAX_IBI_MS = 1500; // 1500 ms -> ~40 bpm mínimo
+const int MIN_IBI_MS = 500;   // 500 ms  -> ~120 bpm máximo
+const int MAX_IBI_MS = 1500;  // 1500 ms -> ~40 bpm mínimo
 
 // Armazena IBIs recentes
 std::vector<int> ibiList;
 const size_t MAX_IBI_SAMPLES = 20;
 
-float currentBPM    = 0.0f; // BPM após filtros (valor usado/enviado)
-float baselineBPM   = 0.0f; // BPM médio em repouso
+float currentBPM    = 0.0f;  // BPM após filtros (valor usado/enviado)
+float baselineBPM   = 0.0f;  // BPM médio em repouso
 bool  baselineReady = false;
 
 // Filtro extra para remover ruídos de BPM
@@ -65,7 +59,7 @@ const float BPM_MAX_JUMP = 30.0f; // variação máxima aceitável entre medidas
 const int   BPM_SPIKE_TOLERANCE = 3; // depois de N leituras "altas" seguidas, aceita
 
 // ===========================================================================
-// ================== Função que atualiza o batimento =======================
+// ================== Função que atualiza o batimento ========================
 // ===========================================================================
 
 void updatePulse() {
@@ -104,6 +98,7 @@ void updatePulse() {
 
   // Detecção de pico
   if (!Pulse && Signal > thresh) {
+
     if (lastBeatMs == 0) {
       // Primeiro batimento: só marca o tempo, não calcula IBI ainda
       lastBeatMs = now;
@@ -196,24 +191,18 @@ void updatePulse() {
 }
 
 // ===========================================================================
-// ===== Verifica se o BPM é compatível com crise ===========================
+// ===== Verifica se o BPM é compatível com crise ============================
 // ===========================================================================
 
 bool hrConsistenteComCrise() {
-  // Se a checagem de batimentos estiver desativada,
-  // qualquer crise de movimento é considerada compatível.
-  if (!useHeartRateCheck) {
-    return true;
-  }
-
-  // Com checagem ativada, aplicamos a lógica:
-  // - precisa ter baseline calculado
-  // - BPM em faixa plausível
-  // - BPM atual pelo menos 30% acima do baseline e >= 110
   if (!baselineReady) return false;
   if (currentBPM < 40.0f || currentBPM > 200.0f) return false;
 
   float ratio = currentBPM / baselineBPM;
+
+  // Critério simples:
+  // - BPM atual >= 110
+  // - Pelo menos 30% acima do baseline
   if (currentBPM >= 110.0f && ratio >= 1.30f) {
     return true;
   }
@@ -221,7 +210,7 @@ bool hrConsistenteComCrise() {
 }
 
 // ===========================================================================
-// ====================== MPU6050 (SEM LEDS) ================================
+// ====================== MPU6050 (SEM LEDS) =================================
 // ===========================================================================
 
 constexpr int SDA_PIN = 21;
@@ -241,27 +230,30 @@ constexpr float G = 9.80665f;
 #define GYR_LSB_PER_DPS 65.5f    // FSR +/- 500dps
 
 // ---------------------------------------------------------------------------
-// JANELA E PADRÕES DE CRISE (CALIBRAÇÃO MAIS SENSÍVEL PARA TESTE)
+// JANELA E PADRÕES DE CRISE (CALIBRAÇÃO BASEADA EM LITERATURA)
 // ---------------------------------------------------------------------------
 
 #define FS_HZ              100
 #define WINDOW_SECONDS     1.0f
 #define WINDOW_SAMPLES     (int)(FS_HZ*WINDOW_SECONDS)
 
-// Agora aceitamos tremer um pouco mais devagar, mas ainda exigindo tremor
-// cíclico (não vale qualquer movimento super lento).
-#define FREQ_MIN_HZ        0.8f   // antes 2.0f
-#define FREQ_MAX_HZ        12.0f  // um pouco mais aberto
+// Estudos com pulseira no punho sugerem que a maior parte da energia de
+// crises tônico-clônicas fica ali por volta de 4–8 Hz, enquanto movimentos
+// normais ficam < ~0.8–1 Hz. Aqui usamos uma faixa 3–8 Hz para tolerar
+// um pouco de variação, mas focar em tremor convulsivo real.
+#define FREQ_MIN_HZ        2.0f
+#define FREQ_MAX_HZ        10.0f
 
-// Histerese: precisa de 2 janelas "com cara de crise" seguidas pra ativar,
-// e 3 janelas limpas pra desligar.
-#define REQUIRED_WINDOWS_ON  2
-#define REQUIRED_WINDOWS_OFF 3
+// Mais sensível para detectar crises tônico-clônicas com base em janelas
+// de 1 s, mas exigindo alguns segundos em sequência para considerar "crise".
+#define REQUIRED_WINDOWS_ON  2   // ≈ 3 s seguidos padrão crise para ativar
+#define REQUIRED_WINDOWS_OFF 2   // ≈ 2 s limpos para encerrar crise
 
-// Limiares de amplitude ajustados a partir dos seus logs:
-// repouso ~0.04 g e ~3 dps, então colocamos um pouco acima.
-#define ACC_RMS_MIN_G      0.06f   // antes 0.15f
-#define GYR_RMS_MIN_DPS    4.0f   // antes 20.0f
+// Limiares de amplitude baseados nos padrões de repouso que você mediu
+// (repouso ~0,007 g / ~3 dps) e em descrições de crises com amplitude bem
+// maior. 0.35 g RMS e 50 dps RMS filtram muito movimento leve/ambulatorial.
+#define ACC_RMS_MIN_G      0.30f
+#define GYR_RMS_MIN_DPS    40.0f
 
 #define HP_A            0.97f
 #define DIR_MIN_G_HP    0.12f
@@ -322,7 +314,6 @@ float estimateFreqByZeroCross(const float *x, int n, float fs) {
 bool windowLooksLikeSeizure_ACC_GYR(float &acc_rms_g, float &freq_hz, float &gyr_rms_dps) {
   static float smv_local[WINDOW_SAMPLES];
   static float gyr_local[WINDOW_SAMPLES];
-
   for (int i = 0; i < WINDOW_SAMPLES; ++i) {
     smv_local[i] = smv_buf[i];
     gyr_local[i] = gyrmag_buf[i];
@@ -339,30 +330,16 @@ bool windowLooksLikeSeizure_ACC_GYR(float &acc_rms_g, float &freq_hz, float &gyr
   bool freq_ok = (freq_hz     >= FREQ_MIN_HZ && freq_hz <= FREQ_MAX_HZ);
   bool gyr_ok  = (gyr_rms_dps >= GYR_RMS_MIN_DPS);
 
-  // Regras:
-  // 1) Frequência TEM que estar na faixa (descarta balanço muito lento ou aleatório)
-  // 2) Basta aceleração OU giro acima do limiar para considerar a janela "de crise".
-  //
-  // Isso evita o "tudo é crise" (return true) mas continua bem mais sensível
-  // do que a versão original.
-  if (!freq_ok) {
-    return false;
-  }
-
-  if (acc_ok || gyr_ok) {
-    return true;
-  }
-
-  return false;
+  // Só consideramos "janela com cara de crise" se:
+  // - amplitude de aceleração for alta
+  // - frequência estiver na banda típica de tremor convulsivo
+  // - giroscópio indicar rotação forte
+  return (acc_ok && freq_ok && gyr_ok);
 }
 
 // ===========================================================================
 // =================== TELEMETRIA VIA SERIAL (COM4) ==========================
 // ===========================================================================
-
-// Intervalo de envio de telemetria (ms).
-// Reduzido para 250 ms para dar sensação de "tempo real".
-const unsigned long TELEMETRY_INTERVAL_MS = 250;
 
 void enviaTelemetriaSerial(float bpm,
                            float baselineBpm,
@@ -370,7 +347,7 @@ void enviaTelemetriaSerial(float bpm,
                            bool criseConfirmada) {
   // Mapeia os estados para o backend
   String status = "NORMAL";
-  if (criseConfirmada || (!useHeartRateCheck && criseMovimento)) {
+  if (criseConfirmada) {
     status = "CRISE_CONFIRMADA";
   } else if (criseMovimento) {
     status = "MOVIMENTO_SUSPEITO";
@@ -415,7 +392,7 @@ void setup() {
   if (who != 0x68 && who != 0x70) {
     Serial.println("ERRO: MPU-6050 não encontrado!");
     while (true) {
-      delay(1000); // trava aqui
+      delay(1000); // trava aqui, sem usar LEDs
     }
   }
 
@@ -440,26 +417,6 @@ void setup() {
 // ===========================================================================
 
 void loop() {
-  // 0) Verifica se chegou algum comando pela Serial (do bridge)
-  while (Serial.available() > 0) {
-    String cmdLine = Serial.readStringUntil('\n');
-    cmdLine.trim();
-    if (cmdLine.length() == 0) {
-      continue;
-    }
-
-    // Comando esperado: {"cmd":"SET_USE_HR","value":true/false}
-    if (cmdLine.indexOf("SET_USE_HR") >= 0) {
-      bool value = true;
-      if (cmdLine.indexOf("false") >= 0 || cmdLine.indexOf("0") >= 0) {
-        value = false;
-      }
-      useHeartRateCheck = value;
-      Serial.print("[CONFIG] useHeartRateCheck = ");
-      Serial.println(useHeartRateCheck ? "true" : "false");
-    }
-  }
-
   // 1) Atualiza batimento (HW-827)
   updatePulse();
 
@@ -478,9 +435,9 @@ void loop() {
   int16_t gy_raw = toInt16(buf[10], buf[11]);
   int16_t gz_raw = toInt16(buf[12], buf[13]);
 
-  float ax_g = ax_raw / ACC_LSB_PER_G;
-  float ay_g = ay_raw / ACC_LSB_PER_G;
-  float az_g = az_raw / ACC_LSB_PER_G;
+  float ax_g = (ax_raw / ACC_LSB_PER_G);
+  float ay_g = (ay_raw / ACC_LSB_PER_G);
+  float az_g = (az_raw / ACC_LSB_PER_G);
 
   float ax_ms2 = ax_g * G;
   float ay_ms2 = ay_g * G;
@@ -488,9 +445,9 @@ void loop() {
 
   float smv = sqrtf(ax_ms2*ax_ms2 + ay_ms2*ay_ms2 + az_ms2*az_ms2) - G;
 
-  float gx_dps = gx_raw / GYR_LSB_PER_DPS;
-  float gy_dps = gy_raw / GYR_LSB_PER_DPS;
-  float gz_dps = gz_raw / GYR_LSB_PER_DPS;
+  float gx_dps = (gx_raw / GYR_LSB_PER_DPS);
+  float gy_dps = (gy_raw / GYR_LSB_PER_DPS);
+  float gz_dps = (gz_raw / GYR_LSB_PER_DPS);
   float gyr_mag_dps = sqrtf(gx_dps*gx_dps + gy_dps*gy_dps + gz_dps*gz_dps);
 
   smv_buf[widx]     = smv;
@@ -604,27 +561,12 @@ void loop() {
     }
   }
 
-  // 5) Envio de telemetria periódico (via Serial / COM4)
+  // 5) Envio de telemetria a cada 1 segundo (via Serial / COM4)
   static unsigned long lastSendMs = 0;
   unsigned long nowMs = millis();
-  if (nowMs - lastSendMs >= TELEMETRY_INTERVAL_MS) {
+  if (nowMs - lastSendMs >= 1000) { // 1s
     lastSendMs = nowMs;
-
-    float bpmToSend  = currentBPM;
-    float baseToSend = baselineBPM;
-
-    // Se a checagem de batimento está DESLIGADA e estamos em crise de movimento,
-    // mas o BPM ainda está 0, manda um valor "neutro" só para a dashboard entender.
-    if (!useHeartRateCheck && crise_ativa) {
-      if (bpmToSend <= 0.0f) {
-        bpmToSend = 90.0f;    // valor simbólico
-      }
-      if (baseToSend <= 0.0f) {
-        baseToSend = 80.0f;   // baseline simbólico
-      }
-    }
-
-    enviaTelemetriaSerial(bpmToSend, baseToSend, crise_ativa, crise_confirmada);
+    enviaTelemetriaSerial(currentBPM, baselineBPM, crise_ativa, crise_confirmada);
   }
 
   delay(10);
