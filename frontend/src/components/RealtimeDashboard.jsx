@@ -101,9 +101,6 @@ export const RealtimeDashboard = ({ deviceId = "bracelet-01" }) => {
     return () => clearInterval(id);
   }, []);
 
-  const effectiveStatus =
-    !useHrCheck && status === "MOVIMENTO_SUSPEITO" ? "CRISE_CONFIRMADA" : status;
-
   // Envia configuração de uso de batimentos para o backend sempre que mudar
   useEffect(() => {
     const controller = new AbortController();
@@ -133,7 +130,7 @@ export const RealtimeDashboard = ({ deviceId = "bracelet-01" }) => {
 
   // Dispara alerta sempre que o status efetivo entra em CRISE_CONFIRMADA
   useEffect(() => {
-    if (effectiveStatus !== "CRISE_CONFIRMADA") return;
+    if (status !== "CRISE_CONFIRMADA") return;
 
     if (soundEnabled) {
       const audio = new Audio("/sounds/alert.mp3");
@@ -149,9 +146,9 @@ export const RealtimeDashboard = ({ deviceId = "bracelet-01" }) => {
       },
       ...prev,
     ]);
-  }, [effectiveStatus, soundEnabled, volume]);
+  }, [status, soundEnabled, volume]);
 
-  const bgColor = STATUS_COLORS[effectiveStatus] || "#6b7280";
+  const bgColor = STATUS_COLORS[status] || "#6b7280";
 
   const renderBpmChart = () => {
     if (!bpmHistory.length) {

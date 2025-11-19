@@ -241,27 +241,27 @@ constexpr float G = 9.80665f;
 #define GYR_LSB_PER_DPS 65.5f    // FSR +/- 500dps
 
 // ---------------------------------------------------------------------------
-// JANELA E PADRÕES DE CRISE (CALIBRAÇÃO BASEADA EM LITERATURA)
+// JANELA E PADRÕES DE CRISE (CALIBRAÇÃO MAIS SENSÍVEL PARA TESTE)
 // ---------------------------------------------------------------------------
 
 #define FS_HZ              100
 #define WINDOW_SECONDS     1.0f
 #define WINDOW_SAMPLES     (int)(FS_HZ*WINDOW_SECONDS)
 
-// Faixa de frequência típica de tremor convulsivo
-#define FREQ_MIN_HZ        2.0f
-#define FREQ_MAX_HZ        10.0f
+// Agora aceitamos tremer um pouco mais devagar, mas ainda exigindo tremor
+// cíclico (não vale qualquer movimento super lento).
+#define FREQ_MIN_HZ        0.8f   // antes 2.0f
+#define FREQ_MAX_HZ        12.0f  // um pouco mais aberto
 
-// Sensível o bastante para testes de movimento:
-// - ativa crise com ~1 s de padrão de crise
-// - exige ~2 s limpos para encerrar
-#define REQUIRED_WINDOWS_ON  1   // janelas "com cara de crise" para ativar
-#define REQUIRED_WINDOWS_OFF 2   // janelas limpas para encerrar
+// Histerese: precisa de 2 janelas "com cara de crise" seguidas pra ativar,
+// e 3 janelas limpas pra desligar.
+#define REQUIRED_WINDOWS_ON  2
+#define REQUIRED_WINDOWS_OFF 3
 
-// Limiares intermediários: mais fáceis de atingir que 0.30/40,
-// mas ainda filtram movimentos muito leves.
-#define ACC_RMS_MIN_G      0.15f
-#define GYR_RMS_MIN_DPS    20.0f
+// Limiares de amplitude ajustados a partir dos seus logs:
+// repouso ~0.04 g e ~3 dps, então colocamos um pouco acima.
+#define ACC_RMS_MIN_G      0.06f   // antes 0.15f
+#define GYR_RMS_MIN_DPS    4.0f   // antes 20.0f
 
 #define HP_A            0.97f
 #define DIR_MIN_G_HP    0.12f
@@ -322,6 +322,7 @@ float estimateFreqByZeroCross(const float *x, int n, float fs) {
 bool windowLooksLikeSeizure_ACC_GYR(float &acc_rms_g, float &freq_hz, float &gyr_rms_dps) {
   static float smv_local[WINDOW_SAMPLES];
   static float gyr_local[WINDOW_SAMPLES];
+
   for (int i = 0; i < WINDOW_SAMPLES; ++i) {
     smv_local[i] = smv_buf[i];
     gyr_local[i] = gyrmag_buf[i];
@@ -338,11 +339,21 @@ bool windowLooksLikeSeizure_ACC_GYR(float &acc_rms_g, float &freq_hz, float &gyr
   bool freq_ok = (freq_hz     >= FREQ_MIN_HZ && freq_hz <= FREQ_MAX_HZ);
   bool gyr_ok  = (gyr_rms_dps >= GYR_RMS_MIN_DPS);
 
-  // Só consideramos "janela com cara de crise" se:
-  // - amplitude de aceleração for alta
-  // - frequência estiver na banda típica de tremor convulsivo
-  // - giroscópio indicar rotação forte
-  return (acc_ok && freq_ok && gyr_ok);
+  // Regras:
+  // 1) Frequência TEM que estar na faixa (descarta balanço muito lento ou aleatório)
+  // 2) Basta aceleração OU giro acima do limiar para considerar a janela "de crise".
+  //
+  // Isso evita o "tudo é crise" (return true) mas continua bem mais sensível
+  // do que a versão original.
+  if (!freq_ok) {
+    return false;
+  }
+
+  if (acc_ok || gyr_ok) {
+    return true;
+  }
+
+  return false;
 }
 
 // ===========================================================================
@@ -615,7 +626,6 @@ void loop() {
 
     enviaTelemetriaSerial(bpmToSend, baseToSend, crise_ativa, crise_confirmada);
   }
-
 
   delay(10);
 }
