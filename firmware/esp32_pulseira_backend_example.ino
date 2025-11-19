@@ -343,13 +343,19 @@ bool windowLooksLikeSeizure_ACC_GYR(float &acc_rms_g, float &freq_hz, float &gyr
 // =================== TELEMETRIA VIA SERIAL (COM4) ==========================
 // ===========================================================================
 
+// Intervalo de envio de telemetria (ms).
+// Reduzido de 1000 ms para 250 ms para deixar o backend/dashboard
+// recebendo atualizações com mais frequência (mais próximo do que
+// você vê no monitor serial do IDE).
+const unsigned long TELEMETRY_INTERVAL_MS = 250;
+
 void enviaTelemetriaSerial(float bpm,
                            float baselineBpm,
                            bool criseMovimento,
                            bool criseConfirmada) {
   // Mapeia os estados para o backend
   String status = "NORMAL";
-  if (criseConfirmada) {
+  if (criseConfirmada || (!useHeartRateCheck && criseMovimento)) {
     status = "CRISE_CONFIRMADA";
   } else if (criseMovimento) {
     status = "MOVIMENTO_SUSPEITO";
@@ -582,10 +588,10 @@ void loop() {
     }
   }
 
-  // 5) Envio de telemetria a cada 1 segundo (via Serial / COM4)
+  // 5) Envio de telemetria periódico (via Serial / COM4)
   static unsigned long lastSendMs = 0;
   unsigned long nowMs = millis();
-  if (nowMs - lastSendMs >= 1000) { // 1s
+  if (nowMs - lastSendMs >= TELEMETRY_INTERVAL_MS) {
     lastSendMs = nowMs;
     enviaTelemetriaSerial(currentBPM, baselineBPM, crise_ativa, crise_confirmada);
   }
