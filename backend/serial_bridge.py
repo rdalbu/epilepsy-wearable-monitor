@@ -129,6 +129,11 @@ def main() -> None:
           except json.JSONDecodeError:
             print("JSON inválido, ignorando:", line)
           else:
+            # Normaliza o campo de status para evitar problemas
+            # com Enum no backend (espaços, quebras de linha etc.)
+            if "status" in payload and isinstance(payload["status"], str):
+              payload["status"] = payload["status"].strip().upper()
+
             last_payload = payload
             _send_payload(payload)
 
@@ -144,4 +149,3 @@ def main() -> None:
 
 if __name__ == "__main__":
   main()
-

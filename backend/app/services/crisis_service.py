@@ -18,10 +18,7 @@ def process_telemetry_and_update_crisis(
     db: Session,
     telemetry: Telemetry,
 ) -> Optional[Dict[str, Any]]:
-    """
-    Atualiza o estado de crise com base na telemetria atual.
-    Retorna um dicionário simples descrevendo o evento de crise, ou None.
-    """
+    
     crisis = _get_open_crisis(db, telemetry.device_id)
 
     # Início de crise
