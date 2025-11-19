@@ -311,7 +311,7 @@ export const RealtimeDashboard = ({ deviceId = "bracelet-01" }) => {
         {now.toLocaleTimeString("pt-BR", { hour12: false })}
       </p>
       <p>
-        <strong>Status da crise:</strong> {effectiveStatus}
+        <strong>Status da crise:</strong> {status}
       </p>
       <p>
         <strong>BPM atual:</strong> {bpm ?? "--"}

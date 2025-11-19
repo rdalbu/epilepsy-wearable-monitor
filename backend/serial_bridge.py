@@ -22,7 +22,7 @@ def _send_payload(payload: Dict[str, Any], prefix: str = "") -> None:
     try:
         resp = requests.post(BACKEND_URL, json=payload, timeout=2)
         print(f"{prefix}Enviado:", payload, "HTTP:", resp.status_code)
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:  
         print(f"{prefix}Erro ao enviar para backend:", e)
 
 
