@@ -116,6 +116,7 @@ def main() -> None:
       line_bytes = ser.readline()
       if line_bytes:
         line = line_bytes.decode("utf-8", errors="ignore").strip()
+        print("RAW:", repr(line))
 
         # O firmware imprime várias linhas de debug (ex.: [WIN], [CRISE])
         # misturadas com linhas JSON. Para garantir que não perdemos
