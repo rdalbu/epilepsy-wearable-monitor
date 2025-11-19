@@ -117,10 +117,14 @@ def main() -> None:
       if line_bytes:
         line = line_bytes.decode("utf-8", errors="ignore").strip()
 
-        # Só nos interessam as linhas JSON emitidas pelo firmware
-        if line.startswith("{"):
+        # O firmware imprime várias linhas de debug (ex.: [WIN], [CRISE])
+        # misturadas com linhas JSON. Para garantir que não perdemos
+        # telemetria, extraímos o trecho que parece JSON mesmo que venha
+        # junto com texto de debug.
+        if "{" in line and "}" in line:
+          json_part = line[line.find("{") : line.rfind("}") + 1]
           try:
-            payload = json.loads(line)
+            payload = json.loads(json_part)
           except json.JSONDecodeError:
             print("JSON inválido, ignorando:", line)
           else:
